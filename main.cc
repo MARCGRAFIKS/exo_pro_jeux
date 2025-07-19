@@ -11,7 +11,10 @@
 	 float x, y;
      float dx, dy;
 	 short life;
-    int onLedge;
+    bool onLedge;
+    int animFrame;
+    SDL_RendererFlip facingLeft;
+    bool slowingDown;
 	 char* name;
  }Man;
  typedef struct {
@@ -25,6 +28,7 @@
     Man man;
     Star star[100];
     Ledge ledge[100];
+    int time;
     SDL_Texture* starTex;
     SDL_Texture* manFrames[2];
     SDL_Texture* brickTex;
@@ -73,7 +77,11 @@
      game->man.y = 140;
      game->man.dx = 0;
      game->man.dy = 0;
-     game->man.onLedge = 0;
+     game->man.onLedge = false;
+     game->man.animFrame = 0;
+     game->man.facingLeft = SDL_FLIP_HORIZONTAL;
+     game->man.slowingDown = false;
+     game->time = 0;
 
      for(int i(0); i<100; ++i) {
        game->star[i].x = rand() % 640;
@@ -90,6 +98,26 @@
 
     game->ledge[98].x = 350;
     game->ledge[98].y = 350;
+ }
+
+ void proccess(GameState* game) {
+  // time
+    game->time++;
+  // mouvement
+    Man* man = &game->man;
+    man->x += man->dx;
+    man->y += man->dy; 
+
+    if(man->dx != 0 && man->onLedge && !man->slowingDown) {
+      if(game->time %30 == 0) {	    
+        if(man->animFrame == 0) { 
+         man->animFrame = 1;		
+     }else {
+       man->animFrame = 0;
+     }
+    }
+  }  
+    man->dy += GRAVITY;
  }
 
  bool proccessEvent(SDL_Window* window, GameState* game) {
@@ -112,7 +140,7 @@
           case SDLK_UP:
           if(game->man.onLedge){
              game->man.dy = -8;
-             game->man.onLedge = 0;
+             game->man.onLedge = false;
           }
           break;
 	   }
@@ -125,25 +153,40 @@
       }
     
  const Uint8* state = SDL_GetKeyboardState(NULL);
-  
+   if(state[SDL_SCANCODE_UP]) {
+      game->man.dy -= 0.2f;
+   }
+ 
+
   //Walking
   if(state[SDL_SCANCODE_LEFT])
   {
-    game->man.x -= 10;
-  }
+    game->man.dx -= 0.5;
+    if(game->man.dx < -6) {
+
+       game->man.dx = -6;
+    }
+    game->man.facingLeft = SDL_FLIP_HORIZONTAL;
+    game->man.slowingDown = false;
+  }else
   if(state[SDL_SCANCODE_RIGHT])
   {
-    game->man.x += 10;
+     game->man.dx = 0.5;
+    if(game->man.dx > 6) {
+
+       game->man.dx = 6;
+    }
+    game->man.facingLeft = SDL_FLIP_NONE;
+    game->man.slowingDown = false;
+  }else {
+    game->man.animFrame = 0;
+    game->man.dx *= 0.8f;
+    if(fabsf(game->man.dx) < 0.1f) {
+       game->man.dx = 0;
+       game->man.slowingDown = true;
+    }
   }
-
     return done;
- }
-
- void proccess(GameState* game) {
-    Man* man = &game->man;
-    man->y += man->dy;
-
-    man->dy += GRAVITY;
  }
   
  void collisionDetect(GameState *game)
@@ -157,7 +200,7 @@
     if(mx+mw/2 > bx && mx+mw/2<bx+bw)
     {
       //are we bumping our head?
-      if(my < by+bh && my > by)
+      if(my < by+bh && my > by && game->man.dy < 0)
       {
         //correct y
         game->man.y = by+bh;
@@ -165,13 +208,13 @@
         
         //bumped our head, stop any jump velocity
         game->man.dy = 0;
-        game->man.onLedge = 1;
+        game->man.onLedge = true;;
       }
     }
     if(mx+mw > bx && mx<bx+bw)
     {
       //are we landing on the ledge
-      if(my+mh > by && my < by)
+      if(my+mh > by && my < by && game->man.dy > 0)
       {
         //correct y
         game->man.y = by-mh;
@@ -179,27 +222,27 @@
         
         //landed on this ledge, stop any jump velocity
         game->man.dy = 0;
-        game->man.onLedge = 1;
+        game->man.onLedge = true;
       }
     }
   
     if(my+mh > by && my<by+bh)
     {
       //rubbing against right edge
-      if(mx < bx+bw && mx+mw > bx+bw)
+      if(mx < bx+bw && mx+mw > bx+bw && game->man.dx < 0)
       {
         //correct x
         game->man.x = bx+bw;
         mx = bx+bw;
-        
+        game->man.dx = 0;
       }
       //rubbing against left edge
-      else if(mx+mw > bx && mx < bx)
+      else if(mx+mw > bx && mx < bx && game->man.dx > 0)
       {
         //correct x
         game->man.x = bx-mw;
         mx = bx-mw;
-        
+	      game->man.dx = 0;
       }
     }
   }
@@ -215,7 +258,7 @@
            SDL_RenderCopy(game->renderer, game->brickTex, NULL, &ledgeRect);
         }
         SDL_Rect rect = {game->man.x, game->man.y, 48, 48};
-        SDL_RenderCopyEx(game->renderer, game->manFrames[0], NULL, &rect, 0, NULL, SDL_FLIP_NONE);
+        SDL_RenderCopyEx(game->renderer, game->manFrames[game->man.animFrame], NULL, &rect, 0, NULL, game->man.facingLeft);
     //  for(int i(0); i<100; ++i){
     //      SDL_Rect starRect = {game->star[i].x, game->star[i].y, 64, 64};
     //      SDL_RenderCopy(game->renderer, game->starTex, NULL, &starRect);
